@@ -7,6 +7,7 @@
 #include "TH1F.h"
 #include "TCanvas.h"
 #include "TApplication.h"
+#include "TRandom.h"
 
 // Pythia Header File (Needed to interpret the event objects)
 #include "Pythia8/Pythia.h"
@@ -42,7 +43,9 @@ int main(int argc, char* argv[]) {
 
   // 4. Initialize the Canvas and the E Histogram
   TCanvas* c1 = new TCanvas("c1", "Pythia Analysis", 1200, 600);
+  TCanvas* c2 = new TCanvas("c2", "Pythia Analysis", 1200, 600);
   TH1F* mHist = new TH1F("mHist", "Invariant Mass;M [GeV];Entries", 100, 0.0, 1.0);
+  TH1F* m1Hist = new TH1F("m1Hist", "Smeared Invariant Mass;M [GeV];Entries", 100, 0.0, 1.0);
 
   // 5. Loop over all simulated events inside the ROOT tree
   Long64_t nEvents = tree->GetEntries();
@@ -76,33 +79,95 @@ int main(int argc, char* argv[]) {
     }
   }
 
-  c1->cd(2);
+  // adding acceptance cuts and energy smearing
+  // pseudoraptidity eta = -ln(tan(theta/2)) where theta = arccos(pz/pr) and is bounded by -1.7<eta<1.3
+  // gaussian smearing of energy sigma = 0.053 * E / sqrt(E)
+  size_t Smear_nPhotons = e_vector->size();
+  for (Long64_t i = 0; i < nEvents; ++i) {
+    tree->GetEntry(i);
+    size_t Smear_nPhotons = e_vector->size();
+    for (size_t j = 0; j < Smear_nPhotons; ++j) {
+      for (size_t k = j + 1; k < Smear_nPhotons; ++k) {
+        double e_j = (*e_vector)[j]; //individual photons
+        double px_j = (*px_vector)[j];
+        double py_j = (*py_vector)[j];
+        double pz_j = (*pz_vector)[j];
+        
+        double p_j = sqrt(px_j*px_j + py_j*py_j + pz_j*pz_j);
+        double theta_j = acos(pz_j / p_j);
+        double eta_j = -log(tan(theta_j / 2.0));
+        
+        double e_k = (*e_vector)[k]; 
+        double px_k = (*px_vector)[k];
+        double py_k = (*py_vector)[k];
+        double pz_k = (*pz_vector)[k];
+        
+        double p_k = sqrt(px_k*px_k + py_k*py_k + pz_k*pz_k);
+        double theta_k = acos(pz_k / p_k);
+        double eta_k = -log(tan(theta_k / 2.0));
+        
+        if (eta_j < -1.7 || eta_j > 1.3) continue; // acceptance cuts
+        if (eta_k < -1.7 || eta_k > 1.3) continue;
+        
+        double sigma_j = 0.053 * e_j / sqrt(e_j);  // smearing and momentum accounting
+        double smeared_e_j = gRandom->Gaus(e_j, sigma_j);
+        double ratio_j = smeared_e_j / e_j;
+        double smeared_px_j = ratio_j * px_j;
+        double smeared_py_j = ratio_j * py_j;
+        double smeared_pz_j = ratio_j * pz_j;
+        
+        double sigma_k = 0.053 * e_k / sqrt(e_k); 
+        double smeared_e_k = gRandom->Gaus(e_k, sigma_k);
+        double ratio_k = smeared_e_k / e_k;
+        double smeared_px_k = ratio_k * px_k;
+        double smeared_py_k = ratio_k * py_k;
+        double smeared_pz_k = ratio_k * pz_k;
+        
+        double e_sum = smeared_e_j + smeared_e_k; // sum
+        double px_sum = smeared_px_j + smeared_px_k;
+        double py_sum = smeared_py_j + smeared_py_k;
+        double pz_sum = smeared_pz_j + smeared_pz_k;
+        
+        double M2 = (e_sum * e_sum) - (px_sum * px_sum + py_sum * py_sum + pz_sum * pz_sum);
+        if (M2 > 0) {
+          m1Hist->Fill(sqrt(M2));
+        }
+      }
+    }
+  }
+
+  double accepted_mass = 0.135; //comparison to accepted mass of pion
+  
+  double selected_mass = mHist->GetBinCenter(mHist->GetMaximumBin());
+  double deviation = std::abs(selected_mass - accepted_mass);
+  std::cout << "Perfect mass peak: " << selected_mass << " GeV (Dev: " << (deviation/accepted_mass)*100.0 << "%)\n";
+
+  double smear_selected_mass = m1Hist->GetBinCenter(m1Hist->GetMaximumBin());
+  double smear_deviation = std::abs(smear_selected_mass - accepted_mass);
+  std::cout << "Smeared mass peak: " << smear_selected_mass << " GeV (Dev: " << (smear_deviation/accepted_mass)*100.0 << "%)\n";
+
+  c1->cd();
   mHist->Draw();
   c1->SaveAs("/Users/lucashill/Downloads/Python/Klay_Lab_Work/PionMass.png");
 
+  c2->cd();
+  m1Hist->Draw();
+  c2->SaveAs("/Users/lucashill/Downloads/Python/Klay_Lab_Work/SmearedPionMass.png");
 
-  double accepted_mass = 0.135;
-  double selected_mass = mHist->GetBinCenter(mHist->GetMaximumBin());
-  std::cout << "Selected mass: " << selected_mass << std::endl;
-  double deviation = std::abs(selected_mass - accepted_mass);
-  std::cout << "Deviation from accepted mass: " << deviation << std::endl;
-  double percent_deviation = (deviation / accepted_mass) * 100.0;
-  std::cout << "Percent deviation: " << percent_deviation << "%" << std::endl;
+  std::cout << "Close the graphical windows to exit the application.\n";
+  theApp.Run(); 
 
-  theApp.Run();
-  // Clean up variables after the app window closes
   inFile->Close();
   delete inFile;
+  delete c1;
+  delete c2;
+  delete mHist;
+  delete m1Hist;
   
   return 0;
 }
 
-// pions: 211, -211, 111
-// neutral pions: 111
-// gamma: 22
-// note: you can work with the pions directly from pythia, but we choose this method for clarity
-// M2 = E2-P2 -> (E1+E2)2 - (p1+p2)2. = 2E1E2cos(theta)
-// if you compare the # to the invariant mass, you will get a little peak.  Nested for loop to compare all photons to eachother.
+
 
 // for the future: do pi+- p+- k+- pT spectra.
 // Pseudorapidity spectra: =-ln(tan(theta/2)) take a look to see if you can get this [i].eta or whatever. do this for all.
