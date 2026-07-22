@@ -29,70 +29,66 @@ int main(int argc, char* argv[]) {
   TTree* tree = (TTree*)inFile->Get("GAM");
   TTree* tree2 = (TTree*)inFile->Get("m");
 
-  // 3. Set up a placeholder variable to read data back out of the tree
-  std::vector<double>* e = nullptr;
-  tree->SetBranchAddress("e", &e);
-  std::vector<double>* px = nullptr;
-  tree->SetBranchAddress("px", &px);
-  std::vector<double>* py = nullptr;
-  tree->SetBranchAddress("py", &py);
-  std::vector<double>* pz = nullptr;
-  tree->SetBranchAddress("pz", &pz);
-  std::vector<double>* m = nullptr;
-  tree->SetBranchAddress("m", &m);
-
-  // 4. Initialize the Canvas and the E Histogram
+  // 3. Initialize the Canvas and the E Histogram
   TCanvas* c1 = new TCanvas("c1", "Pythia Analysis", 1200, 600);
   TCanvas* c2 = new TCanvas("c2", "Pythia Analysis", 1200, 600);
+  TCanvas* c3 = new TCanvas("c3", "Pythia Analysis", 1200, 600);
+  c3->Divide(4,5);
   TH1F* mHist = new TH1F("mHist", "Invariant Mass;M [GeV];Entries", 100, 0.0, 1.0);
   TH1F* m1Hist = new TH1F("m1Hist", "Smeared Invariant Mass;M [GeV];Entries", 100, 0.0, 1.0);
+  
+  TH1F* m2Hist[20];
+  for (int i = 0; i < 20; ++i) {
+    double pT_low = 0.2 + (i * 0.5);
+    double pT_high = pT_low + 0.5;
+    std::string name = "pTHist_" + std::to_string(i);
+    std::string title = "Smeared M (#pi^{0}) for " + std::to_string(pT_low).substr(0,3) + " < p_{T} < " + std::to_string(pT_high).substr(0,3) + " GeV;M [GeV];Entries";
+    m2Hist[i] = new TH1F(name.c_str(), title.c_str(), 100, 0.0, 1.0);
+  }
 
-  // 5. Loop over all simulated events inside the ROOT tree
+  // 4. set up placeholder variables to read data back out of the tree
   Long64_t nEvents = tree->GetEntries();
   std::vector<double> *e_vector = nullptr;
   std::vector<double> *px_vector = nullptr;
   std::vector<double> *py_vector = nullptr;
   std::vector<double> *pz_vector = nullptr;
+  std::vector<double> *pT_vector = nullptr;
   
- tree->SetBranchAddress("e", &e_vector);
- tree->SetBranchAddress("px", &px_vector);
- tree->SetBranchAddress("py", &py_vector);
- tree->SetBranchAddress("pz", &pz_vector);
+  tree->SetBranchAddress("e", &e_vector);
+  tree->SetBranchAddress("px", &px_vector);
+  tree->SetBranchAddress("py", &py_vector);
+  tree->SetBranchAddress("pz", &pz_vector);
+  tree->SetBranchAddress("pT", &pT_vector);
 
-  std::cout << "\nAnalysis complete. Close the graphical window to quit.\n";
-
-  size_t nPhotons = e_vector->size();
+  //5. Loop over all simulated events inside the ROOT tree
   for (Long64_t i = 0; i < nEvents; ++i) {
     tree->GetEntry(i);
     size_t nPhotons = e_vector->size();
     for (size_t j = 0; j < nPhotons; ++j) {
       for (size_t k = j + 1; k < nPhotons; ++k) {
+        //
+        // Calculate perfect invatiant mass of photon pairs
+        //
         double e_sum = (*e_vector)[j] + (*e_vector)[k];
-                double px_sum = (*px_vector)[j] + (*px_vector)[k];
-                double py_sum = (*py_vector)[j] + (*py_vector)[k];
-                double pz_sum = (*pz_vector)[j] + (*pz_vector)[k];
-                // M^2 = E^2 - |p|^2
-                double M2 = (e_sum * e_sum) - (px_sum * px_sum + py_sum * py_sum + pz_sum * pz_sum);
-                
-        mHist->Fill(sqrt(M2)); // Fill the histogram with the invariant mass
-      }
-    }
-  }
+        double px_sum = (*px_vector)[j] + (*px_vector)[k];
+        double py_sum = (*py_vector)[j] + (*py_vector)[k];
+        double pz_sum = (*pz_vector)[j] + (*pz_vector)[k];
+        // M^2 = E^2 - |p|^2
+        double M1 = (e_sum * e_sum) - (px_sum * px_sum + py_sum * py_sum + pz_sum * pz_sum); // perfect invariant mass
+        if (M1 >= 0) {
+        mHist->Fill(sqrt(M1));
+        } // fill histogram 1 with the perfect invariant mass while avoiding negative roots
 
-  // adding acceptance cuts and energy smearing
-  // pseudoraptidity eta = -ln(tan(theta/2)) where theta = arccos(pz/pr) and is bounded by -1.7<eta<1.3
-  // gaussian smearing of energy sigma = 0.053 * E / sqrt(E)
-  size_t Smear_nPhotons = e_vector->size();
-  for (Long64_t i = 0; i < nEvents; ++i) {
-    tree->GetEntry(i);
-    size_t Smear_nPhotons = e_vector->size();
-    for (size_t j = 0; j < Smear_nPhotons; ++j) {
-      for (size_t k = j + 1; k < Smear_nPhotons; ++k) {
+        //
+        // adding acceptance cuts and energy smearing
+        // pseudoraptidity eta = -ln(tan(theta/2)) where theta = arccos(pz/pr) and is bounded by -1.7<eta<1.3
+        // gaussian smearing of energy sigma = 0.053 * E / sqrt(E)
+        //
+
         double e_j = (*e_vector)[j]; //individual photons
         double px_j = (*px_vector)[j];
         double py_j = (*py_vector)[j];
         double pz_j = (*pz_vector)[j];
-        
         double p_j = sqrt(px_j*px_j + py_j*py_j + pz_j*pz_j);
         double theta_j = acos(pz_j / p_j);
         double eta_j = -log(tan(theta_j / 2.0));
@@ -100,8 +96,7 @@ int main(int argc, char* argv[]) {
         double e_k = (*e_vector)[k]; 
         double px_k = (*px_vector)[k];
         double py_k = (*py_vector)[k];
-        double pz_k = (*pz_vector)[k];
-        
+        double pz_k = (*pz_vector)[k]; 
         double p_k = sqrt(px_k*px_k + py_k*py_k + pz_k*pz_k);
         double theta_k = acos(pz_k / p_k);
         double eta_k = -log(tan(theta_k / 2.0));
@@ -123,19 +118,28 @@ int main(int argc, char* argv[]) {
         double smeared_py_k = ratio_k * py_k;
         double smeared_pz_k = ratio_k * pz_k;
         
-        double e_sum = smeared_e_j + smeared_e_k; // sum
-        double px_sum = smeared_px_j + smeared_px_k;
-        double py_sum = smeared_py_j + smeared_py_k;
-        double pz_sum = smeared_pz_j + smeared_pz_k;
+        double e_sum_sm = smeared_e_j + smeared_e_k; // sum
+        double px_sum_sm = smeared_px_j + smeared_px_k;
+        double py_sum_sm = smeared_py_j + smeared_py_k;
+        double pz_sum_sm = smeared_pz_j + smeared_pz_k;
         
-        double M2 = (e_sum * e_sum) - (px_sum * px_sum + py_sum * py_sum + pz_sum * pz_sum);
-        if (M2 > 0) {
-          m1Hist->Fill(sqrt(M2));
+        double M2 = (e_sum_sm * e_sum_sm) - (px_sum_sm * px_sum_sm + py_sum_sm * py_sum_sm + pz_sum_sm * pz_sum_sm);
+        if (M2 < 0) continue; // Skip negative mass roots
+        m1Hist->Fill(sqrt(M2)); // Fill histogram 2 with the smeared invariant mass
+
+        //
+        // 20 histograms of smeared invariant masses from pT of 0.2-10.2GeV in 0.5 GeV increments
+        //
+        double pT_val = sqrt(px_sum_sm * px_sum_sm + py_sum_sm * py_sum_sm);
+        int histIndex = static_cast<int>((pT_val - 0.2) / 0.5);
+        if (pT_val >= 0.2 && pT_val < 10.2) {
+          m2Hist[histIndex]->Fill(sqrt(M2));
         }
       }
     }
   }
 
+  // 6. Compare to accepted mass of pion
   double accepted_mass = 0.135; //comparison to accepted mass of pion
   
   double selected_mass = mHist->GetBinCenter(mHist->GetMaximumBin());
@@ -146,6 +150,7 @@ int main(int argc, char* argv[]) {
   double smear_deviation = std::abs(smear_selected_mass - accepted_mass);
   std::cout << "Smeared mass peak: " << smear_selected_mass << " GeV (Dev: " << (smear_deviation/accepted_mass)*100.0 << "%)\n";
 
+  // 7. Draw and save plots
   c1->cd();
   mHist->Draw();
   c1->SaveAs("/Users/lucashill/Downloads/Python/Klay_Lab_Work/PionMass.png");
@@ -154,16 +159,24 @@ int main(int argc, char* argv[]) {
   m1Hist->Draw();
   c2->SaveAs("/Users/lucashill/Downloads/Python/Klay_Lab_Work/SmearedPionMass.png");
 
+  for (int i = 0; i < 20; ++i) {
+    c3->cd(i + 1);
+    m2Hist[i]->Draw();
+  }
+  c3->SaveAs("/Users/lucashill/Downloads/Python/Klay_Lab_Work/pT_bins_invariant_mass.png");
+
   std::cout << "Close the graphical windows to exit the application.\n";
   theApp.Run(); 
 
+  //8. Close and clean
   inFile->Close();
   delete inFile;
   delete c1;
   delete c2;
+  delete c3;
   delete mHist;
   delete m1Hist;
-  
+  for (int i = 0; i < 20; ++i) {delete m2Hist[i];}
   return 0;
 }
 
