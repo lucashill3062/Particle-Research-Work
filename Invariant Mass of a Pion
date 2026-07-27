@@ -171,7 +171,7 @@ int main(int argc, char* argv[]) {
   double smear_deviation = std::abs(smear_selected_mass - accepted_mass);
   std::cout << "Smeared mass peak: " << smear_selected_mass << " GeV (Dev: " << (smear_deviation/accepted_mass)*100.0 << "%)\n";
 
-  // 7. Fit the distributions with a Gaussian + Quadratic function to extract mass, width, and yield
+  // 7. Fit the distributions with Gaussian and quadratic functions to extract mass, width, and yield
   
   //
   // Fit the smeared distribution
@@ -198,7 +198,7 @@ int main(int argc, char* argv[]) {
   }
 
   //
-  //gaussian and quadratic fits for the pT-binned graphs, focusing on width, mean, and yield.
+  // Fit the 20 pT-binned distributions
   //
   TF1* saved_fits[20] = {nullptr};
 
@@ -221,7 +221,6 @@ int main(int argc, char* argv[]) {
     saved_fits[i]->SetParLimits(1, 0.110, 0.160);   
     saved_fits[i]->SetParLimits(2, 0.003, 0.035);   
 
-    // CHANGE: Added "N" to the fit options string
     TFitResultPtr bin_res = FittedHist2[i]->Fit(saved_fits[i], "SRQ"); 
 
     if (bin_res.Get() != nullptr && bin_res->IsValid()) {
@@ -229,13 +228,8 @@ int main(int argc, char* argv[]) {
       double sigma = bin_res->Parameter(2);
       double yield = amp * sigma * sqrt(2 * M_PI) / FittedHist2[i]->GetBinWidth(1);
 
-      // CHANGE: Applied styling properties directly to the array element
       saved_fits[i]->SetLineColor(kRed);
       saved_fits[i]->SetLineWidth(2);
-    } else {
-      // CHANGE: Clean up failed fits safely
-      delete saved_fits[i];
-      saved_fits[i] = nullptr;
     }
   }
 
@@ -248,18 +242,15 @@ int main(int argc, char* argv[]) {
   m1Hist->Draw();
   c2->SaveAs("/Users/lucashill/Downloads/Python/Klay_Lab_Work/SmearedPionMass.png");
 
-  // --- Fit and Draw the Smeared Distribution (c5) ---
   c5->cd();
 
-  // Enable the fit parameters in the stats box (Chi2/ndf, Prob, Values, Errors)
   gStyle->SetOptFit(1111);
-  gStyle->SetOptStat(0);  // Hide hist stats for all sub-pads
+  gStyle->SetOptStat(0);
 
   FittedHist1->Draw();
 
   TF1 *smeared_fit_func_1 = new TF1("smeared_fit_func_1", "gaus(0) + pol2(3)", 0.05, 0.30);
 
-  // Name the parameters so they appear beautifully in the stats box
   smeared_fit_func_1->SetParName(0, "Gauss scale");
   smeared_fit_func_1->SetParName(1, "Gauss #mu");
   smeared_fit_func_1->SetParName(2, "Gauss #sigma");
@@ -272,11 +263,10 @@ int main(int argc, char* argv[]) {
   smeared_fit_func_1->SetParameter(1, 0.135); 
   smeared_fit_func_1->SetParameter(2, 0.012); 
 
-  // Fit the histogram (remove "Q" if you want to see the terminal output log)
   TFitResultPtr smeared_fit_res_1 = FittedHist1->Fit(smeared_fit_func_1, "SR");
 
   if (smeared_fit_res_1.Get() != nullptr && smeared_fit_res_1->IsValid()) {
-    // 1. Extract and draw the Quadratic Background component (Red)
+    //Background component (Red)
     TF1 *bg_c5 = new TF1("bg_c5", "pol2", 0.05, 0.30);
     bg_c5->SetParameter(0, smeared_fit_func_1->GetParameter(3));
     bg_c5->SetParameter(1, smeared_fit_func_1->GetParameter(4));
@@ -284,7 +274,7 @@ int main(int argc, char* argv[]) {
     bg_c5->SetLineColor(kRed);
     bg_c5->Draw("same");
     
-    // 2. Extract and draw the Gaussian Signal component (Green)
+    // 2. Gaussian component (Green)
     TF1 *sig_c5 = new TF1("sig_c5", "gaus", 0.05, 0.30);
     sig_c5->SetParameter(0, smeared_fit_func_1->GetParameter(0));
     sig_c5->SetParameter(1, smeared_fit_func_1->GetParameter(1));
@@ -292,14 +282,14 @@ int main(int argc, char* argv[]) {
     sig_c5->SetLineColor(kGreen+2); 
     sig_c5->Draw("same");
 
-    // 3. Set Total Fit to Blue and draw it
+    // 3. Total Fit (Blue)
     smeared_fit_func_1->SetLineColor(kBlue);
     smeared_fit_func_1->SetLineWidth(2);
     smeared_fit_func_1->Draw("same");
   }
 
   c5->Modified();
-  c5->Update(); // Forces ROOT to draw the updated stats box immediately
+  c5->Update();
   c5->SaveAs("/Users/lucashill/Downloads/Python/Klay_Lab_Work/FittedSmearedPionMass.png");
 
 
@@ -312,18 +302,16 @@ int main(int argc, char* argv[]) {
   c6->Clear();
   c6->Divide(5, 4); 
 
-  // Ensure fit options are globally enabled for all sub-pads
   gStyle->SetOptFit(1111);
-  gStyle->SetOptStat(0);  // Hide hist stats for all sub-pads
+  gStyle->SetOptStat(0);
 
   for (int i = 0; i < 20; ++i) {
     c6->cd(i + 1); 
     
-    // Drawing the histogram first generates the base stats box layout
     FittedHist2[i]->Draw();
     
     if (saved_fits[i] != nullptr) {
-      // 1. Draw Red Background component
+      // 1. Background component (Red)
       TF1 *bg_component = new TF1(Form("bg_%d", i), "pol2", 0.00, 0.25);
       bg_component->SetParameter(0, saved_fits[i]->GetParameter(3));
       bg_component->SetParameter(1, saved_fits[i]->GetParameter(4));
@@ -331,7 +319,7 @@ int main(int argc, char* argv[]) {
       bg_component->SetLineColor(kRed);
       bg_component->Draw("same");
       
-      // 2. Draw Green Signal component
+      // 2. Gaussian component (Green)
       TF1 *sig_component = new TF1(Form("sig_%d", i), "gaus", 0.00, 0.25);
       sig_component->SetParameter(0, saved_fits[i]->GetParameter(0));
       sig_component->SetParameter(1, saved_fits[i]->GetParameter(1));
@@ -339,7 +327,7 @@ int main(int argc, char* argv[]) {
       sig_component->SetLineColor(kGreen+2);
       sig_component->Draw("same");
       
-      // 3. Draw Total Fit in Blue
+      // 3. Total Fit (Blue)
       saved_fits[i]->SetLineColor(kBlue);
       saved_fits[i]->SetLineWidth(2);
       saved_fits[i]->Draw("same");
